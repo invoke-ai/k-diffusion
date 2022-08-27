@@ -59,7 +59,21 @@ class DiscreteSchedule(nn.Module):
         dists = torch.abs(sigma - self.sigmas[:, None])
         if quantize:
             return torch.argmin(dists, dim=0).view(sigma.shape)
-        low_idx, high_idx = torch.sort(torch.topk(dists, dim=0, k=2, largest=False).indices, dim=0)[0]
+        topk_indices = torch.topk(dists, dim=0, k=2, largest=False).indices
+        topk_indices_device=topk_indices.device
+
+        # TODO: revert this once MPS supports aten::sort.values_stable.
+        # we're transferring the topk indices to CPU, sorting them, then transferring the result (sort_values) back to GPU.
+        # it's fine to sort on-CPU, because it's a wee little 2x2 matrix.
+        # PYTORCH_ENABLE_MPS_FALLBACK=1 would do the same thing. but I want us to be able to run without that.
+        # so that we find out any time a fallback is required, and can review whether it's consequential.
+        must_sort_on_cpu = topk_indices_device.type == 'mps'
+        topk_indices = topk_indices.cpu() if must_sort_on_cpu else topk_indices
+
+        sort_values = torch.sort(topk_indices, dim=0).values
+        sort_values = sort_values.to(topk_indices_device) if must_sort_on_cpu else sort_values
+
+        low_idx, high_idx = sort_values
         low, high = self.sigmas[low_idx], self.sigmas[high_idx]
         w = (low - sigma) / (low - high)
         w = w.clamp(0, 1)
