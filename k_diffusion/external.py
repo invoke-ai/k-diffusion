@@ -82,7 +82,8 @@ class DiscreteSchedule(nn.Module):
 
     def t_to_sigma(self, t):
         t = t.float()
-        low_idx, high_idx, w = t.floor().long(), t.ceil().long(), t-(t*t.sgn()).floor()*t.sgn() if t.device.type == 'mps' else t.frac()
+        t_floor = t.floor()
+        low_idx, high_idx, w = t_floor.long(), t.ceil().long(), t-t_floor if t.device.type == 'mps' else t.frac()
         return (1 - w) * self.sigmas[low_idx] + w * self.sigmas[high_idx]
 
 
